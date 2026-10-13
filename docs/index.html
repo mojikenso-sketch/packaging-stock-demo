@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="ระบบควบคุมสต๊อกบรรจุภัณฑ์ (Demo) — บริษัท ตัวอย่าง อินดัสทรี จำกัด">
+<title>ระบบควบคุมสต๊อกบรรจุภัณฑ์ · Demo</title>
+<script>
+// apply saved theme before CSS paints (no flash)
+try { document.documentElement.dataset.theme = localStorage.getItem('demo_pkg_theme') || 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; }
+try { document.documentElement.dataset.sidebar = localStorage.getItem('demo_pkg_sidebar') || 'expanded'; } catch (e) { document.documentElement.dataset.sidebar = 'expanded'; }
+</script>
+<link rel="stylesheet" href="assets/style.css?v=demo1">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-ic">📦</div>
+      <div><b>Packaging Stock</b><small>ระบบควบคุมบรรจุภัณฑ์ · Demo</small></div>
+    </div>
+    <button type="button" class="sidebar-toggle" id="sidebar-toggle"
+      aria-label="ซ่อนแถบเมนู" aria-expanded="true" title="ซ่อนแถบเมนู">
+      <span id="sidebar-toggle-icon">‹</span>
+    </button>
+    <nav class="nav">
+      <div class="nav-label">ภาพรวม</div>
+      <button data-view="dash" class="active" aria-label="แดชบอร์ด" title="แดชบอร์ด"><span class="ic">📊</span><span class="txt">แดชบอร์ด</span></button>
+      <button data-view="pkg" aria-label="แจ้งเตือน และติดตาม Lot" title="แจ้งเตือน &amp; ติดตาม Lot"><span class="ic">🔔</span><span class="txt">แจ้งเตือน &amp; Lot</span><span class="badge-n" id="nav-alert-n" style="display:none"></span></button>
+      <div class="nav-label">งานประจำวัน</div>
+      <button data-view="txn" aria-label="ตารางรับเข้า / เบิกจ่าย" title="ตารางรับเข้า / เบิกจ่าย"><span class="ic">🧾</span><span class="txt">ตารางรับเข้า / เบิกจ่าย</span></button>
+      <button data-view="history" aria-label="ประวัติรายการ" title="ประวัติรายการ"><span class="ic">📜</span><span class="txt">ประวัติรายการ</span></button>
+      <div class="nav-label">วิเคราะห์</div>
+      <button data-view="stats" aria-label="อัตราการใช้งาน" title="อัตราการใช้งาน"><span class="ic">📈</span><span class="txt">อัตราการใช้งาน</span></button>
+      <div class="nav-label">ระบบ</div>
+      <button data-view="settings" aria-label="สินค้า &amp; ตั้งค่า" title="สินค้า &amp; ตั้งค่า"><span class="ic">⚙️</span><span class="txt">สินค้า &amp; ตั้งค่า</span></button>
+    </nav>
+    <button class="theme-toggle" id="theme-toggle" title="สลับโหมดสว่าง/มืด">
+      <span class="ic" id="theme-ic">🌙</span><span class="txt" id="theme-txt">โหมดมืด</span>
+    </button>
+    <div class="foot">บริษัท ตัวอย่าง อินดัสทรี จำกัด<br>อัปเดตล่าสุด: <span id="foot-time">-</span></div>
+  </aside>
+
+  <main class="main">
+    <div class="demo-banner" id="demo-banner" role="status" aria-live="polite"></div>
+    <div id="view-dash"></div>
+    <div id="view-txn" style="display:none"></div>
+    <div id="view-history" style="display:none"></div>
+    <div id="view-pkg" style="display:none"></div>
+    <div id="view-stats" style="display:none"></div>
+    <div id="view-settings" style="display:none"></div>
+  </main>
+</div>
+
+<footer class="programming-credit">Programming by Duongruthai_Milk</footer>
+
+<!-- item detail drawer -->
+<div class="overlay" id="overlay"></div>
+<div class="drawer" id="drawer"></div>
+<div class="modal-box" id="modal"></div>
+<div id="toast-zone"></div>
+
+<script src="config.js?v=demo1"></script>
+<script src="assets/demo.js?v=demo1"></script>
+<script src="assets/app.js?v=demo1"></script>
+</body>
+</html>
