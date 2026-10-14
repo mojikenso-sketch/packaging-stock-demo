@@ -22,7 +22,7 @@ window.DEMO_ACCOUNTS = DEMO_ACCOUNTS;
 // gateUrl = URL /exec ของโปรเจกต์ Apps Script "Trial Gate" (แยกจาก API ของเดโมนี้)
 // ถ้ายังเป็น PASTE_... หรือเชื่อมต่อไม่ได้ เดโมยังใช้งานได้ตามปกติ (fail-open)
 window.DEMO_TRIAL = {
-  gateUrl: 'PASTE_TRIAL_GATE_URL_HERE',
+  gateUrl: 'https://script.google.com/macros/s/AKfycbwQzhsI1OIN-YUumWLE0n1150c9hTPC--Npm19k44AIDjneJfn2SFXnTYxsW9OGbO0/exec',
   app: 'packaging',
   hours: 5,
   contact: DEMO_CONTACT,
