@@ -617,7 +617,12 @@ async function frontendTests() {
   const files = ['config.js', 'assets/trial-gate.js', 'assets/demo.js', 'assets/app.js'].map(f => [f, fs.readFileSync(path.join(ROOT, 'docs', f), 'utf8')]);
   const EXEC = 'https://script.google.com/macros/s/DEMO_TEST_DEPLOYMENT/exec';
 
-  function makeFront(apiUrl, gas) {
+  // docs/config.js may hold the real Trial Gate URL; the frontend tests run with
+  // the placeholder (unless a test passes another gateUrl) so fetchLog only holds
+  // the app's own API calls and the gate stays fail-open.
+  const GATE_PLACEHOLDER = 'PASTE_TRIAL_GATE_URL_HERE';
+  const DEPLOYED_EXEC_RE = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
+  function makeFront(apiUrl, gas, gateUrl = GATE_PLACEHOLDER) {
     const dom = createDom();
     const fetchLog = [];
     const win = {
@@ -646,7 +651,9 @@ async function frontendTests() {
     win.window = win;
     vm.createContext(win);
     for (const [name, code] of files) {
-      const src = name === 'config.js' ? code.replace(/API_URL: '[^']*'/, `API_URL: '${apiUrl}'`) : code;
+      const src = name === 'config.js'
+        ? code.replace(/API_URL: '[^']*'/, `API_URL: '${apiUrl}'`).replace(/gateUrl: '[^']*'/, `gateUrl: '${gateUrl}'`)
+        : code;
       vm.runInContext(src, win, {filename: name});
     }
     return {win, dom, fetchLog, run: code => vm.runInContext(code, win)};
@@ -839,7 +846,14 @@ async function frontendTests() {
     const t = f.run('window.DEMO_TRIAL');
     assert.strictEqual(t.app, 'packaging');
     assert.strictEqual(t.hours, 5);
-    assert.strictEqual(t.gateUrl, 'PASTE_TRIAL_GATE_URL_HERE');
+    // docs/config.js: placeholder or a deployed Trial Gate /exec URL
+    const cfg = files.find(([n]) => n === 'config.js')[1];
+    const current = (/gateUrl: '([^']*)'/.exec(cfg) || [])[1];
+    assert.ok(current === GATE_PLACEHOLDER || DEPLOYED_EXEC_RE.test(current), 'gate URL ' + current);
+    const api = (/API_URL: '([^']*)'/.exec(cfg) || [])[1];
+    assert.ok(api === 'PASTE_DEPLOYED_EXEC_URL_HERE' || DEPLOYED_EXEC_RE.test(api), 'API URL ' + api);
+    // the frontend under test runs with the placeholder gate URL (overridden above)
+    assert.strictEqual(t.gateUrl, GATE_PLACEHOLDER);
     assert.strictEqual(t.contact, f.run('window.DEMO_CONTACT'));
     assert.match(t.priceHtml, /19,900 บาท\/ปี/);
     assert.match(t.priceHtml, /39,900 บาท/);
