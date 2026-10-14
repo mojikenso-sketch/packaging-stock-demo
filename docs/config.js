@@ -4,7 +4,7 @@
  */
 window.DEMO_CONFIG = {
   // วาง URL ของ Web App (ลงท้ายด้วย /exec) แทนข้อความด้านล่าง
-  API_URL: 'PASTE_DEPLOYED_EXEC_URL_HERE',
+  API_URL: 'https://script.google.com/macros/s/AKfycbwcePRNtEq6PERhUJWWEJRxJ0l1Fou74W4vwCmjrXniItegiSEn4B8aamhvexSibt5F/exec',
 };
 
 // ข้อความติดต่อที่แสดงบนแถบ Demo ทุกหน้า
