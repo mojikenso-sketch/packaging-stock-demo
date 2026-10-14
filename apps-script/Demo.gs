@@ -1,15 +1,16 @@
 /**
- * Demo.gs — one-time setup, seeding and the 3-day auto reset.
+ * Demo.gs — one-time setup, seeding and the 5-hour auto reset.
  *
  *   setupDemo()      รันครั้งเดียว: สร้าง Spreadsheet + ชีต, ใส่ข้อมูลตัวอย่าง,
- *                    ตั้งรหัสผ่านทดลอง และติดตั้ง Trigger รีเซ็ตอัตโนมัติ
+ *                    ตั้งรหัสผ่านทดลอง และติดตั้ง Trigger รีเซ็ตอัตโนมัติ (รายชั่วโมง)
  *   resetDemoNow()   รีเซ็ตข้อมูลกลับเป็นค่าเริ่มต้นทันที
- *   demoAutoReset()  ถูกเรียกโดย Trigger ทุกวัน — รีเซ็ตเมื่อครบ 3 วัน
+ *   demoAutoReset()  ถูกเรียกโดย Trigger ทุกชั่วโมง — รีเซ็ตเมื่อครบ 5 ชั่วโมง
  */
 
-var DEMO_RESET_DAYS = 3;
+var DEMO_RESET_HOURS = 5;
 var DEMO_TRIGGER_HANDLER = 'demoAutoReset';
-var DEMO_TRIGGER_HOUR = 1;          // ทุกวันช่วง 01:00–02:00 น. (เวลาไทย)
+var DEMO_TRIGGER_EVERY_HOURS = 1;    // Trigger ทำงานทุก 1 ชั่วโมง
+var DEMO_RESET_TOLERANCE_MS = 30 * 1000;   // เผื่อเวลา Trigger คลาดเคลื่อนเล็กน้อย (วินาที)
 var DEMO_EDIT_PASSWORD = 'demo1234'; // รหัสผ่านเปิดโหมดแก้ไขตารางรายวัน
 var DEMO_SPREADSHEET_NAME = 'Packaging Stock DEMO — ข้อมูลระบบทดลอง (Demo Co., Ltd.)';
 var PROP_LAST_RESET = 'DEMO_LAST_RESET';
@@ -53,7 +54,7 @@ function resetDemoNow() {
   }
 }
 
-// Time-driven trigger (daily). Re-seeds when >= 3 days since the last reset.
+// Time-driven trigger (hourly). Re-seeds when >= 5 hours since the last reset.
 function demoAutoReset() {
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty(PROP_SPREADSHEET_ID)) return 'skip: not set up';
@@ -72,27 +73,24 @@ function demoAutoReset() {
   }
 }
 
-// 1 hour tolerance so a reset done by the trigger at 01:05 is due again
-// at the 01:xx run three days later (trigger minute varies).
+// Due 5 hours after the last reset (minus a few seconds of tolerance so a
+// trigger that fires a hair early is not pushed a whole hour later). The
+// hourly trigger therefore resets within 5–6 hours of the previous reset.
 function demoDueAt_(lastMs) {
-  return lastMs + DEMO_RESET_DAYS * 24 * HOUR_MS - HOUR_MS;
+  return lastMs + DEMO_RESET_HOURS * HOUR_MS - DEMO_RESET_TOLERANCE_MS;
 }
 
-// First daily trigger run (DEMO_TRIGGER_HOUR:00 Bangkok, UTC+7) at/after due time.
+// Shown on the banner: last reset + 5 hours (the hourly trigger picks it up
+// within the following hour at the latest).
 function demoNextResetAt_(lastMs) {
-  var due = demoDueAt_(lastMs);
-  var BKK = 7 * HOUR_MS;
-  var wall = new Date(due + BKK);
-  var run = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate(), DEMO_TRIGGER_HOUR, 0, 0) - BKK;
-  if (run < due) run += 24 * HOUR_MS;
-  return run;
+  return lastMs + DEMO_RESET_HOURS * HOUR_MS;
 }
 
 function demoInfo_() {
   var last = Number(PropertiesService.getScriptProperties().getProperty(PROP_LAST_RESET) || 0);
   var next = last ? demoNextResetAt_(last) : 0;
   return {
-    resetDays: DEMO_RESET_DAYS,
+    resetHours: DEMO_RESET_HOURS,
     lastReset: last ? new Date(last).toISOString() : '',
     nextReset: next ? new Date(next).toISOString() : '',
     nextResetText: next ? Utilities.formatDate(new Date(next), TZ, 'yyyy-MM-dd HH:mm') : '-',
@@ -134,7 +132,7 @@ function installDemoTrigger_() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === DEMO_TRIGGER_HANDLER) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger(DEMO_TRIGGER_HANDLER).timeBased().everyDays(1).atHour(DEMO_TRIGGER_HOUR).create();
+  ScriptApp.newTrigger(DEMO_TRIGGER_HANDLER).timeBased().everyHours(DEMO_TRIGGER_EVERY_HOURS).create();
 }
 
 // Wipes every data sheet and writes the default sample data (dates relative to today).

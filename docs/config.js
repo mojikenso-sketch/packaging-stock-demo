@@ -17,3 +17,14 @@ const DEMO_ACCOUNTS = [
 
 window.DEMO_CONTACT = DEMO_CONTACT;
 window.DEMO_ACCOUNTS = DEMO_ACCOUNTS;
+
+// สิทธิ์ทดลองใช้ 5 ชั่วโมงต่อคน (นับตาม IP + อุปกรณ์) — assets/trial-gate.js
+// gateUrl = URL /exec ของโปรเจกต์ Apps Script "Trial Gate" (แยกจาก API ของเดโมนี้)
+// ถ้ายังเป็น PASTE_... หรือเชื่อมต่อไม่ได้ เดโมยังใช้งานได้ตามปกติ (fail-open)
+window.DEMO_TRIAL = {
+  gateUrl: 'PASTE_TRIAL_GATE_URL_HERE',
+  app: 'packaging',
+  hours: 5,
+  contact: DEMO_CONTACT,
+  priceHtml: 'เช่ารายปีเริ่ม 19,900 บาท/ปี · ขายขาดเริ่ม 39,900 บาท',
+};

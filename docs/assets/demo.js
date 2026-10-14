@@ -1,6 +1,8 @@
 /* ═══ Demo banner — shown on every page of the demo ═══════════════════════
- * "🧪 ระบบทดลองใช้ (Demo) — ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วัน"
+ * "🧪 ระบบทดลองใช้ (Demo) — ข้อมูลกลางรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 5 ชั่วโมง ·
+ *  ผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง"
  * + next reset time / countdown (from the API) + DEMO_CONTACT + demo accounts.
+ * The per-visitor 5-hour limit itself is handled by assets/trial-gate.js.
  */
 'use strict';
 (function () {
@@ -33,7 +35,7 @@
   }
 
   function countdown(ms) {
-    if (ms <= 0) return 'ถึงรอบรีเซ็ตแล้ว (ระบบจะรีเซ็ตภายในรอบถัดไป)';
+    if (ms <= 0) return 'ถึงรอบรีเซ็ตแล้ว (ระบบจะรีเซ็ตภายใน 1 ชั่วโมง)';
     const min = Math.floor(ms / 60000);
     const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
     if (d > 0) return `อีก ${d} วัน ${h} ชม.`;
@@ -56,7 +58,7 @@
     host.innerHTML = `
       <div class="demo-banner-line">
         <span class="demo-banner-tag">🧪 ระบบทดลองใช้ (Demo)</span>
-        <span>— ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วัน · รีเซ็ตครั้งถัดไป: <span id="demo-next-reset">${nextResetHtml()}</span></span>
+        <span>— ข้อมูลกลางรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 5 ชั่วโมง · ผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง · รีเซ็ตครั้งถัดไป: <span id="demo-next-reset">${nextResetHtml()}</span></span>
       </div>
       <div class="demo-banner-line demo-banner-sub">
         <span class="demo-contact">📞 ${escHtml(contactText())}</span>
@@ -66,7 +68,7 @@
       ${accounts().length ? `<div class="demo-accounts" ${accountsOpen ? '' : 'hidden'}>
         <b>บัญชีทดลอง</b>
         <ul>${accounts().map(a => `<li>${escHtml(a.label)}: <code class="demo-code">${escHtml(a.value)}</code></li>`).join('')}</ul>
-        <div class="demo-accounts-note">หน้าดูข้อมูลเปิดให้ใช้ได้ทันที · โหมดแก้ไขของตารางรายวันต้องใช้รหัสผ่านด้านบน · ทุกการแก้ไขจะถูกล้างเมื่อรีเซ็ต</div>
+        <div class="demo-accounts-note">หน้าดูข้อมูลเปิดให้ใช้ได้ทันที · โหมดแก้ไขของตารางรายวัน (เฉพาะวันนี้) ต้องใช้รหัสผ่านด้านบน · ฟีเจอร์ที่มี 🔒 มีในเวอร์ชันเต็ม · ทุกการแก้ไขจะถูกล้างเมื่อรีเซ็ต</div>
       </div>` : ''}`;
   }
 

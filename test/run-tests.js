@@ -9,7 +9,9 @@
  * 2. Seed: plain-data snapshot + invariants (Min/Max, Lot/expiry, balances).
  * 3. Frontend: docs/config.js + assets/demo.js + assets/app.js run against a
  *    minimal DOM stub, with fetch() routed to the mocked doGet / doPost.
- * 4. Branding: no real company / customer names anywhere in the demo folder.
+ * 4. Demo limits: full-version (🔒) actions are refused by the API and shown
+ *    locked in the UI; per-visitor trial gate script is wired in.
+ * 5. Branding: no real company / customer names anywhere in the demo folder.
  */
 'use strict';
 const vm = require('vm');
@@ -23,6 +25,8 @@ const SNAPSHOT_DATE = '2026-01-15';
 const SNAPSHOT_STAMP = '2026-01-15 09:00:00';
 const MAIN_AREA = '1100-คลังบรรจุภัณฑ์';
 const DAY = 24 * 3600e3;
+const HOUR = 3600e3;
+const PREMIUM = /ฟีเจอร์นี้มีในเวอร์ชันเต็ม/;
 
 let passed = 0;
 const failures = [];
@@ -196,46 +200,61 @@ async function demoLifecycleTests() {
     assert.strictEqual(Number(state.props.DEMO_LAST_RESET), start);
     assert.strictEqual(state.props.DEMO_EDIT_PASSWORD, 'demo1234');
   });
-  await test('exactly one daily time-driven trigger for demoAutoReset (also after re-running setup)', () => {
+  await test('exactly one hourly time-driven trigger for demoAutoReset (also after re-running setup)', () => {
+    state.triggers.push({getHandlerFunction: () => 'demoAutoReset', spec: {handler: 'demoAutoReset', old: true}});
     context.setupDemo();
     context.setupDemo();
     const t = state.triggers.filter(x => x.getHandlerFunction() === 'demoAutoReset');
     assert.strictEqual(t.length, 1);
     assert.strictEqual(state.triggers.length, 1);
-    assert.deepStrictEqual({...t[0].spec}, {handler: 'demoAutoReset', timeBased: true, everyDays: 1, atHour: 1});
+    assert.deepStrictEqual({...t[0].spec}, {handler: 'demoAutoReset', timeBased: true, everyHours: 1});
     assert.strictEqual(Object.keys(state.spreadsheets).length, 1, 'reuses the spreadsheet');
   });
-  await test('API exposes demo info (last / next reset)', () => {
+  await test('API exposes demo info (last reset, next reset = last + 5 h)', () => {
     const r = ok(context, 'demo_info', {}, 'GET');
-    assert.strictEqual(r.demo.resetDays, 3);
+    assert.strictEqual(r.demo.resetHours, 5);
     assert.strictEqual(r.demo.lastReset, new Date(start).toISOString());
-    // reset at 12:00 on day 0 → due 11:00 day 3 → first 01:00 run after that is day 4 01:00 BKK
-    assert.strictEqual(r.demo.nextReset, new Date(Date.UTC(2026, 9, 16, 18, 0, 0)).toISOString());
+    assert.strictEqual(r.demo.nextReset, new Date(start + 5 * HOUR).toISOString());
+    assert.strictEqual(r.demo.nextResetText, '2026-10-13 17:00');
     const p = ok(context, 'payload', {}, 'GET');
     assert.strictEqual(p.payload.demo.nextReset, r.demo.nextReset);
   });
-  await test('demoAutoReset does nothing before 3 days', () => {
-    ok(context, 'area_add', {name: 'พื้นที่ทดสอบ'});
-    state.now = start + 2 * DAY;
+  const note = () => itemRows(ok(context, 'payload', {}, 'GET').payload.dailyLedgers['2026-10-13']).find(r => r.id === 'seed-BX-1001-1').stockNote;
+  await test('demoAutoReset does nothing before 5 hours (fake clock 4 h 59 min)', () => {
+    ok(context, 'daily_ledger_save', {date: '2026-10-13', rows: [{id: 'seed-BX-1001-1', stockNote: 'ข้อความทดสอบ'}]});
+    for (const h of [1, 2, 3, 4]) {
+      state.now = start + h * HOUR;
+      assert.strictEqual(context.demoAutoReset(), 'skip: not due', h + ' h');
+    }
+    state.now = start + 5 * HOUR - 60e3;
     assert.strictEqual(context.demoAutoReset(), 'skip: not due');
-    assert.ok(ok(context, 'payload', {}, 'GET').payload.areas.includes('พื้นที่ทดสอบ'));
+    assert.strictEqual(note(), 'ข้อความทดสอบ');
   });
-  await test('demoAutoReset re-seeds after 3 days (user changes removed, dates move to the new today)', () => {
-    state.now = bkkNoon('2026-10-17') - 11 * 3600e3; // 2026-10-17 01:00 BKK trigger run
+  await test('demoAutoReset re-seeds at 5 hours (user changes removed) and again 5 hours later', () => {
+    state.now = start + 5 * HOUR + 60e3;
+    assert.strictEqual(context.demoAutoReset(), 'reset');
+    assert.notStrictEqual(note(), 'ข้อความทดสอบ');
+    assert.strictEqual(Number(state.props.DEMO_LAST_RESET), state.now);
+    assert.strictEqual(ok(context, 'demo_info', {}, 'GET').demo.nextReset, new Date(state.now + 5 * HOUR).toISOString());
+    const last = state.now;
+    state.now = last + 4 * HOUR + 59 * 60e3;
+    assert.strictEqual(context.demoAutoReset(), 'skip: not due');
+    state.now = last + 5 * HOUR;
+    assert.strictEqual(context.demoAutoReset(), 'reset');
+  });
+  await test('seeded dates follow the clock (reset after midnight → today is the new day)', () => {
+    state.now = bkkNoon('2026-10-14') - 8 * HOUR; // 2026-10-14 04:00 BKK, > 5 h after the last reset
     assert.strictEqual(context.demoAutoReset(), 'reset');
     const p = ok(context, 'payload', {}, 'GET').payload;
-    assert.ok(!p.areas.includes('พื้นที่ทดสอบ'));
-    assert.strictEqual(p.today, '2026-10-17');
-    assert.strictEqual(Object.keys(p.dailyLedgers).sort().at(-1), '2026-10-17');
-    assert.strictEqual(Number(state.props.DEMO_LAST_RESET), state.now);
-    // next run three days later at 01:xx is due again (1 h tolerance)
-    state.now += 3 * DAY + 5 * 60e3;
-    assert.strictEqual(context.demoAutoReset(), 'reset');
+    assert.strictEqual(p.today, '2026-10-14');
+    assert.strictEqual(Object.keys(p.dailyLedgers).sort().at(-1), '2026-10-14');
   });
   await test('resetDemoNow re-seeds immediately', () => {
-    ok(context, 'area_add', {name: 'พื้นที่ทดสอบ 2'});
+    const today = ok(context, 'payload', {}, 'GET').payload.today;
+    ok(context, 'daily_ledger_save', {date: today, rows: [{id: 'seed-BX-1002-1', stockNote: 'ทดสอบ 2'}]});
     context.resetDemoNow();
-    assert.ok(!ok(context, 'payload', {}, 'GET').payload.areas.includes('พื้นที่ทดสอบ 2'));
+    const row = itemRows(ok(context, 'payload', {}, 'GET').payload.dailyLedgers[today]).find(r => r.id === 'seed-BX-1002-1');
+    assert.notStrictEqual(row.stockNote, 'ทดสอบ 2');
   });
   await test('before setupDemo the API answers with a setup message', () => {
     const fresh = createGas();
@@ -254,10 +273,17 @@ async function demoLifecycleTests() {
 }
 
 /* ─── 3. every API action ───────────────────────────────────────────────── */
+// The full-version logic is kept in the demo backend; these tests switch the
+// premium lock off to keep it covered. premiumTests() checks the lock itself.
+function setupFull(nowMs) {
+  const gas = setup(nowMs);
+  vm.runInContext('DEMO_LOCK_PREMIUM = false;', gas.context);
+  return gas;
+}
 async function apiTests() {
-  console.log('\nAPI actions');
+  console.log('\nAPI actions (full-version logic, premium lock switched off)');
   const today = '2026-10-13';
-  const {context, state} = setup(bkkNoon(today));
+  const {context, state} = setupFull(bkkNoon(today));
   const yesterday = addDays(today, -1);
   const P = () => ok(context, 'payload', {}, 'GET').payload;
 
@@ -359,7 +385,7 @@ async function apiTests() {
     vm.runInContext(`CTX_ = {}; var L = getDailyLedgers_(); delete L['${tomorrow}']; saveDailyLedgers_(L); syncItemsFromLatestLedger_(L); CTX_ = {};`, context);
   });
   await test('daily_ledger_create fills a gap of several days', () => {
-    const g = setup(bkkNoon(today));
+    const g = setupFull(bkkNoon(today));
     vm.runInContext(`CTX_ = {}; var L = getDailyLedgers_(); delete L['${today}']; delete L['${yesterday}']; saveDailyLedgers_(L); CTX_ = {};`, g.context);
     const r = ok(g.context, 'daily_ledger_create', {date: today});
     assert.deepStrictEqual(r.createdDates, [yesterday, today]);
@@ -476,12 +502,74 @@ async function apiTests() {
     assert.strictEqual(state.locks >= state.unlocks, true);
   });
   await test('every lock taken by a request is released', () => {
-    const g = setup(bkkNoon(today));
+    const g = setupFull(bkkNoon(today));
     g.state.locks = 0; g.state.unlocks = 0;
     ok(g.context, 'area_add', {name: 'x1'});
     err(g.context, 'area_add', {name: 'x1'});
     assert.strictEqual(g.state.locks, 2);
     assert.strictEqual(g.state.unlocks, 2);
+  });
+}
+
+/* ─── 3b. Demo premium lock (server side) ───────────────────────────────── */
+async function premiumTests() {
+  console.log('\nDemo limits: full-version actions refused by the API');
+  const today = '2026-10-13';
+  const yesterday = addDays(today, -1);
+  const {context} = setup(bkkNoon(today));
+  const P = () => ok(context, 'payload', {}, 'GET').payload;
+
+  await test('premium lock is on by default', () => {
+    assert.strictEqual(vm.runInContext('DEMO_LOCK_PREMIUM', context), true);
+  });
+  await test('locked actions return {ok:false, error:"ฟีเจอร์นี้มีในเวอร์ชันเต็ม"} and change nothing', () => {
+    const before = JSON.stringify(P());
+    const calls = {
+      daily_ledger_split_lot: {date: today, id: 'seed-BX-1005-1', qty: 1, lot: 'X'},
+      daily_ledger_delete_row: {date: today, id: 'seed-BX-1006-1'},
+      txn_add: {type: 'receive', code: 'BX-1004', qty: 1, date: today},
+      txn_delete: {id: 'any'},
+      item_update: {code: 'BG-6004', min: 1},
+      item_add: {code: 'ZZ-1', name: 'x'},
+      config_save: {leadTimeDays: 3},
+      area_add: {name: 'x'}, area_rename: {oldName: MAIN_AREA, newName: 'y'}, area_delete: {name: MAIN_AREA},
+      master_add: {kind: 'unit', name: 'x'}, master_rename: {kind: 'unit', oldName: 'ใบ', newName: 'x'},
+      master_delete: {kind: 'unit', name: 'ใบ'},
+    };
+    for (const [action, params] of Object.entries(calls)) {
+      const r = err(context, action, params, PREMIUM);
+      assert.strictEqual(r.error.startsWith('ฟีเจอร์นี้มีในเวอร์ชันเต็ม'), true, action);
+      // also via GET (doGet routes to the same handler)
+      assert.strictEqual(call(context, action, params, 'GET').ok, false, action + ' GET');
+    }
+    const after = JSON.parse(JSON.stringify(P()));
+    const b = JSON.parse(before);
+    delete b.demo.serverTime; delete after.demo.serverTime;
+    assert.deepStrictEqual(after, b);
+  });
+  await test('daily table works for today only (save / add row / create / ready)', () => {
+    err(context, 'daily_ledger_save', {date: yesterday, rows: [{id: 'seed-BX-1001-1', receive: 1}]}, PREMIUM);
+    err(context, 'daily_ledger_add_row', {date: yesterday, code: 'N-1', name: 'x'}, PREMIUM);
+    err(context, 'daily_ledger_create', {date: addDays(today, 1)}, PREMIUM);
+    err(context, 'daily_ready_mark', {date: yesterday}, PREMIUM);
+    const r = ok(context, 'daily_ledger_save', {date: today, rows: [{id: 'seed-BX-1001-1', receive: 7, issuePackaging: 2, stockNote: 'วันนี้'}]});
+    const row = itemRows(r.payload.dailyLedgers[today]).find(x => x.id === 'seed-BX-1001-1');
+    assert.strictEqual(row.receive, 7);
+    assert.strictEqual(row.issuePackaging, 2);
+    const add = ok(context, 'daily_ledger_add_row', {date: today, code: 'NEW-7', name: 'กล่องทดลอง', area: MAIN_AREA, receive: 3});
+    assert.ok(add.addedRow.id);
+    assert.strictEqual(ok(context, 'daily_ledger_create', {date: today}).created, false);
+    ok(context, 'daily_ready_mark', {date: today});
+  });
+  await test('daily_ledger_save: Min / Max / Safety / unit / supplier changes refused, unchanged values accepted', () => {
+    const row = itemRows(P().dailyLedgers[today]).find(x => x.id === 'seed-CP-4001-1');
+    for (const change of [{min: row.min + 1}, {max: row.max + 1}, {safety: row.safety + 1}, {unit: 'กล่องใหม่'}, {supplier: 'บจก. อื่น'}]) {
+      err(context, 'daily_ledger_save', {date: today, rows: [{id: row.id, receive: 1, ...change}]}, PREMIUM);
+    }
+    assert.strictEqual(itemRows(P().dailyLedgers[today]).find(x => x.id === row.id).receive, row.receive, 'nothing saved');
+    // the web page sends the whole row back — unchanged master fields are fine
+    const r = ok(context, 'daily_ledger_save', {date: today, rows: [{...row, receive: row.receive + 5}]});
+    assert.strictEqual(itemRows(r.payload.dailyLedgers[today]).find(x => x.id === row.id).receive, row.receive + 5);
   });
 }
 
@@ -526,7 +614,7 @@ function createDom() {
 
 async function frontendTests() {
   console.log('\nFrontend (docs/) against the mocked Web App');
-  const files = ['config.js', 'assets/demo.js', 'assets/app.js'].map(f => [f, fs.readFileSync(path.join(ROOT, 'docs', f), 'utf8')]);
+  const files = ['config.js', 'assets/trial-gate.js', 'assets/demo.js', 'assets/app.js'].map(f => [f, fs.readFileSync(path.join(ROOT, 'docs', f), 'utf8')]);
   const EXEC = 'https://script.google.com/macros/s/DEMO_TEST_DEPLOYMENT/exec';
 
   function makeFront(apiUrl, gas) {
@@ -558,7 +646,7 @@ async function frontendTests() {
     win.window = win;
     vm.createContext(win);
     for (const [name, code] of files) {
-      const src = name === 'config.js' ? code.replace('PASTE_DEPLOYED_EXEC_URL_HERE', apiUrl) : code;
+      const src = name === 'config.js' ? code.replace(/API_URL: '[^']*'/, `API_URL: '${apiUrl}'`) : code;
       vm.runInContext(src, win, {filename: name});
     }
     return {win, dom, fetchLog, run: code => vm.runInContext(code, win)};
@@ -578,11 +666,13 @@ async function frontendTests() {
   await settle();
   const html = sel => f.dom.getEl(sel).innerHTML;
 
-  await test('demo banner: reset every 3 days, next reset + countdown, contact, demo account', () => {
+  await test('demo banner: shared data reset every 5 hours, 5 hours per visitor, countdown, contact, demo account', () => {
     const b = html('#demo-banner');
     assert.match(b, /🧪 ระบบทดลองใช้ \(Demo\)/);
-    assert.match(b, /ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วัน/);
-    assert.match(b, /รีเซ็ตครั้งถัดไป: <span id="demo-next-reset"><b>.+<\/b> <span class="demo-countdown">\(อีก \d+ วัน/);
+    assert.match(b, /ข้อมูลกลางรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 5 ชั่วโมง/);
+    assert.match(b, /ผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง/);
+    assert.ok(!/3 วัน/.test(b));
+    assert.match(b, /รีเซ็ตครั้งถัดไป: <span id="demo-next-reset"><b>.+<\/b> <span class="demo-countdown">\(อีก 4 ชม\. 5\d นาที\)/);
     assert.match(b, /สนใจใช้งานจริง ติดต่อ: Fastwork \/ LINE: \(ใส่ภายหลัง\)/);
     assert.match(b, /บัญชีทดลอง/);
     assert.match(b, /demo1234/);
@@ -678,6 +768,44 @@ async function frontendTests() {
     await f.run('A.dailyAddRow()');
     assert.ok(f.run("S.items.some(i => i.code === 'NEW-100' && i.stock === 25)"));
   });
+  await test('daily table: 🔒 on export / print / pallet / split / delete; Min / Max / Safety / unit not editable', () => {
+    f.run("show('txn')");
+    const v = html('#view-txn');
+    for (const label of ['🔒 EXPORT EXCEL', '🔒 พิมพ์เอกสาร', '🔒 ใบพาเลต', '🔒 แยก LOT', '🔒 ลบ']) assert.ok(v.includes(label), label);
+    for (const field of ['min', 'max', 'safety', 'unit']) assert.ok(!v.includes(`data-field="${field}"`), field);
+    assert.match(v, /data-field="receive"/);
+    assert.match(v, /data-field="lot"|daily-lot/);
+    assert.match(v, /demo-locked-cell/);
+  });
+  await test('locked buttons open the "มีในเวอร์ชันเต็ม" box with the contact and send nothing', () => {
+    const n = f.fetchLog.length;
+    for (const call of ['A.exportDailyExcel()', 'A.dailyPrint()', "A.dailyOpenPallet('seed-BX-1001-1')", "A.dailyOpenSplitLot('seed-BX-1001-1')",
+      "A.dailyDeleteRow('seed-BX-1001-1')", 'A.exportCSV()', "A.txnDelete('x')", "A.updItem('seed-BX-1001-1','min','1')",
+      "A.addArea()", "A.addMaster('unit')", "A.deleteMaster('unit','ใบ')", "A.renameArea('x')"]) {
+      f.run('A.closePremium()');
+      f.run(call);
+      const box = f.dom.getEl('#demo-premium');
+      assert.strictEqual(box.hidden, false, call);
+      assert.match(box.innerHTML, /🔒/);
+      assert.match(box.innerHTML, /ฟีเจอร์นี้มีในเวอร์ชันเต็ม/);
+      assert.match(box.innerHTML, /สนใจใช้งานจริง ติดต่อ: Fastwork/);
+    }
+    f.run('A.closePremium()');
+    assert.strictEqual(f.dom.getEl('#demo-premium').hidden, true);
+    assert.strictEqual(f.fetchLog.length, n, 'no API calls');
+  });
+  await test('edit mode works on today only (other dates are view-only with a 🔒 note)', () => {
+    const today = f.run('S.today');
+    f.run(`txnDate = '${addDays(today, -1)}'; VIEWS.txn()`);
+    const v = html('#view-txn');
+    assert.ok(!v.includes('data-field="receive"'));
+    assert.match(v, /แก้ไขได้เฉพาะตารางของวันนี้/);
+    const n = f.fetchLog.length;
+    f.run(`ensureDailyLedger('${addDays(today, 1)}')`);
+    assert.strictEqual(f.fetchLog.length, n, 'no auto-create for other dates');
+    f.run(`txnDate = '${today}'; VIEWS.txn()`);
+    assert.match(html('#view-txn'), /data-field="receive"/);
+  });
   await test('history (ประวัติรายการย้อนหลัง) lists ledger movements and older records', () => {
     f.run("show('history')");
     const v = html('#view-history');
@@ -687,6 +815,7 @@ async function frontendTests() {
     assert.match(v, /เบิกรวม −[\d,]+/);
     const n = Number(/(\d[\d,]*) รายการ/.exec(v)[1].replace(/,/g, ''));
     assert.ok(n > 500, 'history entries ' + n);
+    assert.match(v, /🔒 Export CSV/);
   });
   await test('usage statistics and settings render', () => {
     f.run("show('stats')");
@@ -695,6 +824,9 @@ async function frontendTests() {
     const s = html('#view-settings');
     assert.match(s, /บจก\. กล่องไทย ตัวอย่าง/);
     assert.match(s, /รายการสินค้า/);
+    assert.match(s, /หน้านี้ดูได้อย่างเดียว/);
+    assert.strictEqual((s.match(/class="settings-item-input" readonly/g) || []).length, (s.match(/class="settings-item-input"/g) || []).length);
+    for (const label of ['🔒 เพิ่มพื้นที่', '🔒 เพิ่ม</button>', '🔒✎', '🔒✕']) assert.ok(s.includes(label), label);
   });
   await test('item drawer opens with usage + order advice', () => {
     f.run("A.openItem('seed-BX-1001-1')");
@@ -703,8 +835,30 @@ async function frontendTests() {
     assert.match(d, /ยอดเบิกรายวัน 30 วัน/);
     assert.match(d, /ควรสั่งซื้อภายใน/);
   });
+  await test('trial gate: DEMO_TRIAL configured, script loaded, fail-open with the placeholder URL', () => {
+    const t = f.run('window.DEMO_TRIAL');
+    assert.strictEqual(t.app, 'packaging');
+    assert.strictEqual(t.hours, 5);
+    assert.strictEqual(t.gateUrl, 'PASTE_TRIAL_GATE_URL_HERE');
+    assert.strictEqual(t.contact, f.run('window.DEMO_CONTACT'));
+    assert.match(t.priceHtml, /19,900 บาท\/ปี/);
+    assert.match(t.priceHtml, /39,900 บาท/);
+    assert.strictEqual(f.run('window.DemoTrial.isExpired()'), false);
+    assert.ok(!f.fetchLog.some(x => /ipify|cloudflare|PASTE_TRIAL/.test(x.url)), 'no gate requests while the URL is a placeholder');
+  });
+  await test('index.html loads trial-gate.js right after config.js; file identical to the shared TrialGate client', () => {
+    const page = fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
+    const scripts = [...page.matchAll(/<script src="([^"?]+)/g)].map(m => m[1]);
+    assert.deepStrictEqual(scripts, ['config.js', 'assets/trial-gate.js', 'assets/demo.js', 'assets/app.js']);
+    const shared = path.join(ROOT, '..', 'TrialGate', 'client', 'trial-gate.js');
+    if (fs.existsSync(shared)) {
+      assert.strictEqual(fs.readFileSync(path.join(ROOT, 'docs', 'assets', 'trial-gate.js'), 'utf8'), fs.readFileSync(shared, 'utf8'));
+    }
+    const css = fs.readFileSync(path.join(ROOT, 'docs', 'assets', 'style.css'), 'utf8');
+    assert.match(css, /html body #demo-trial-badge \{ left: 248px/, 'badge moved off the sidebar toggle');
+  });
   await test('localStorage keys use the demo_pkg_ prefix', () => {
-    const all = files.map(x => x[1]).join('\n') + fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
+    const all = files.filter(x => x[0] !== 'assets/trial-gate.js').map(x => x[1]).join('\n') + fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
     const keys = [...all.matchAll(/localStorage\.(?:getItem|setItem)\('([^']+)'/g)].map(m => m[1]);
     assert.ok(keys.length >= 5);
     for (const k of keys) assert.ok(k.startsWith('demo_pkg_'), k);
@@ -749,6 +903,7 @@ async function brandingTests() {
   await seedTests();
   await demoLifecycleTests();
   await apiTests();
+  await premiumTests();
   await frontendTests();
   await brandingTests();
   console.log(`\n${passed} passed, ${failures.length} failed`);

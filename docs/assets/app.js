@@ -234,6 +234,41 @@ function toast(msg, cls = '') {
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .4s'; setTimeout(() => t.remove(), 400); }, 3200);
 }
 
+/* ─── Demo: full-version (premium) features ─────────────────────────────── */
+// Locked features keep their buttons visible with a 🔒 and open one small
+// "มีในเวอร์ชันเต็ม" box. The Apps Script API refuses the same actions too.
+const DEMO_LOCK = '🔒';
+const DEMO_PREMIUM_MESSAGE = 'ฟีเจอร์นี้มีในเวอร์ชันเต็ม';
+function demoContactText() {
+  return String(window.DEMO_CONTACT || 'สนใจใช้งานจริง ติดต่อผู้ขาย');
+}
+function demoPremium(feature = '') {
+  let box = document.getElementById('demo-premium');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'demo-premium';
+    document.body.appendChild(box);
+  }
+  box.className = 'demo-premium';
+  box.innerHTML = `<div class="demo-premium-card" role="dialog" aria-modal="true" aria-label="${esc(DEMO_PREMIUM_MESSAGE)}">
+    <div class="demo-premium-ic">${DEMO_LOCK}</div>
+    <b>${esc(DEMO_PREMIUM_MESSAGE)}</b>
+    ${feature ? `<div class="demo-premium-feature">${esc(feature)}</div>` : ''}
+    <div class="demo-premium-contact">— ${esc(demoContactText())}</div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="A.closePremium()">ตกลง</button>
+  </div>`;
+  box.hidden = false;
+  box.onclick = e => { if (e.target === box) A.closePremium(); };
+  return false;
+}
+// The demo works on today's table only (server rule: DEMO_TODAY_ONLY_ACTIONS).
+function demoEditableDate(date = txnDate) {
+  return Boolean(date) && date === String(S.today || '');
+}
+function dailyEditActive() {
+  return dailyEditMode && demoEditableDate();
+}
+
 /* ─── Derived data ──────────────────────────────────────────────────────── */
 function latestDailyDate() {
   const dates = Object.keys(S.dailyLedgers || {}).sort();
@@ -1239,7 +1274,7 @@ function oracleBalanceCell(row, snapshot, fallbackLocator = '') {
 }
 
 function dailyLotCell(row, oracleLots) {
-  if (!dailyEditMode || row.oracleOnly) return dailyReadonlyCell(row.lot, 'trace lot', false);
+  if (!dailyEditActive() || row.oracleOnly) return dailyReadonlyCell(row.lot, 'trace lot', false);
   const listId = `oracle-lots-${String(row.id || '').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   const options = (oracleLots || []).map(entry =>
     `<option value="${esc(entry.lot)}" label="Oracle ${fmt1(entry.qty)} ${esc(entry.uom || '')}"></option>`
@@ -1651,6 +1686,7 @@ async function loadOracleRealtime() {
 
 async function ensureDailyLedger(date) {
   if (!date || S.dailyLedgers?.[date] || dailyAutoCreateLoading.has(date)) return;
+  if (!demoEditableDate(date)) return; // demo: only today's table can be created
   dailyAutoCreateLoading.add(date);
   try {
     const result = await api('daily_ledger_create', {date});
@@ -1839,6 +1875,12 @@ function dailyBalanceClass(row) {
   return 'ok';
 }
 
+// Min / Max / Safety / unit in edit mode: master data → full version only.
+function dailyLockedCell(text, kind = '') {
+  return `<td class="daily-edit-col ${kind} daily-readonly-cell demo-locked-cell" title="${DEMO_LOCK} ${esc(DEMO_PREMIUM_MESSAGE)}"
+    onclick="A.premium('แก้ไข Min / Max / Safety / หน่วยนับ')">${DEMO_LOCK} ${esc(text)}</td>`;
+}
+
 function dailyReadonlyCell(value, kind = '', numeric = false) {
   const text = numeric
     ? fmt1(value)
@@ -1933,7 +1975,8 @@ function commitDailyNumber(input, notify = false) {
 function dailyCell(row, field, label, kind) {
   const value = Number(row[field] || 0);
   const canEditOracleMovement = row.oracleOnly && DAILY_ORACLE_EDIT_FIELDS.has(field);
-  if (!dailyEditMode || (row.oracleOnly && !canEditOracleMovement)) return dailyReadonlyCell(value, kind, true);
+  if (!dailyEditActive() || (row.oracleOnly && !canEditOracleMovement)) return dailyReadonlyCell(value, kind, true);
+  if (kind === 'setting') return dailyLockedCell(fmt1(value), kind);
   return `<td class="daily-edit-col ${kind}">
     <input class="daily-cell-input" type="text" min="0" step="any" inputmode="decimal" autocomplete="off"
       value="${value || ''}" placeholder="0"
@@ -1943,7 +1986,8 @@ function dailyCell(row, field, label, kind) {
 }
 
 function dailyTextCell(row, field, label, kind, placeholder = 'หน่วย', maxLength = 50) {
-  if (!dailyEditMode || row.oracleOnly) return dailyReadonlyCell(row[field], kind, false);
+  if (!dailyEditActive() || row.oracleOnly) return dailyReadonlyCell(row[field], kind, false);
+  if (field === 'unit') return dailyLockedCell(String(row[field] || '').trim() || '-', kind);
   const inputClass = kind === 'comment' ? 'daily-comment-input' : 'daily-text-input';
   return `<td class="daily-edit-col ${kind}">
     <input class="daily-cell-input ${inputClass}" type="text" maxlength="${maxLength}"
@@ -1972,7 +2016,7 @@ function dateFieldError(value, label) {
 }
 
 function dailyDateCell(row, field, label) {
-  if (!dailyEditMode || row.oracleOnly) return dailyReadonlyCell(row[field], 'trace date', false);
+  if (!dailyEditActive() || row.oracleOnly) return dailyReadonlyCell(row[field], 'trace date', false);
   return `<td class="daily-edit-col trace date">
     ${dateInputHtml('', row[field], 'daily-cell-input daily-date-input', `
       data-row="${esc(row.id)}" data-field="${field}" data-value-type="date"
@@ -2197,7 +2241,7 @@ VIEWS.txn = function () {
   const isMergedView = dailyGroupMode === 'merged' && !isOracleView && !isDifferenceView && !isOracleOnlyView;
   // The grouped "มีแต่ใน Oracle" tab is editable for movement fields. Keep the
   // old generic filter read-only for compatibility with older links/bookmarks.
-  const isReadOnlyView = !dailyEditMode || isOracleView || isDifferenceView || isLegacyOracleOnlyView || isMergedView;
+  const isReadOnlyView = !dailyEditActive() || isOracleView || isDifferenceView || isLegacyOracleOnlyView || isMergedView;
   dailyViewReadOnly = isReadOnlyView;
   if (isReadOnlyView) labelUsagePickerActive = false;
   const oracleRecords = Object.values(oracleSnapshot?.records || {})
@@ -2409,6 +2453,8 @@ VIEWS.txn = function () {
           </div>` : ''}
         </div>
         <p>${isReadOnlyView ? 'โหมดดูอย่างเดียว: ดูข้อมูลและเลือกคลุมเพื่อคัดลอกได้ ไม่สามารถแก้ไขข้อมูล' : 'โหมดแก้ไข: คลิกช่องตัวเลข กรอก แล้วระบบบันทึกอัตโนมัติ'}</p>
+        ${dailyEditMode && !demoEditableDate() ? `<p class="demo-locked-note">${DEMO_LOCK} เวอร์ชันทดลองแก้ไขได้เฉพาะตารางของวันนี้ — การแก้ไขย้อนหลังมีในเวอร์ชันเต็ม</p>` : ''}
+        ${!isReadOnlyView ? `<p class="demo-locked-note">${DEMO_LOCK} เวอร์ชันทดลอง: กรอกรับเข้า / เบิกจ่าย / Lot / วันที่ / หมายเหตุ ได้ · Min / Max / Safety / หน่วย, ใบพาเลต, แยก Lot, ลบ, Export และพิมพ์ มีในเวอร์ชันเต็ม</p>` : ''}
         ${labelUsagePickerActive && !isReadOnlyView ? `<div class="label-usage-picker-banner">
           <span>📝 โหมดเลือกใบบันทึกการใช้ฉลาก: กด <b>＋ เลือกฉลาก</b> ที่แถวที่ต้องการ</span>
           <button type="button" class="btn btn-ghost btn-sm" onclick="A.labelUsageCancelPick()">ยกเลิกการเลือก</button>
@@ -2453,8 +2499,8 @@ VIEWS.txn = function () {
         <div class="daily-actions">
           ${!isReadOnlyView ? '<span id="daily-dirty-count" class="daily-save-state">บันทึกอัตโนมัติแล้ว</span>' : ''}
           ${!isReadOnlyView ? '<button class="btn btn-green" type="button" onclick="A.dailyOpenAddRow()">＋ เพิ่มรายการ</button>' : ''}
-          <button class="btn btn-ghost btn-excel" type="button" onclick="A.exportDailyExcel()">📊 EXPORT EXCEL</button>
-          <button class="btn btn-ghost" type="button" onclick="A.dailyPrint()">🖨️ พิมพ์เอกสาร</button>
+          <button class="btn btn-ghost btn-excel demo-locked" type="button" onclick="A.exportDailyExcel()" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} EXPORT EXCEL</button>
+          <button class="btn btn-ghost demo-locked" type="button" onclick="A.dailyPrint()" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} พิมพ์เอกสาร</button>
         </div>` : ''}
     </div>
 
@@ -2625,7 +2671,7 @@ VIEWS.txn = function () {
                   ${isReadOnlyView ? '<span class="daily-readonly-note">ดูอย่างเดียว</span>' : `<button type="button" class="daily-pallet-btn"
                     onclick="A.dailyOpenPallet('${escJs(row.id)}')"
                     aria-label="พิมพ์ใบกำกับพาเลตของ ${esc(row.code)}"
-                    title="พิมพ์ใบกำกับพาเลต (F-WH-001) ของรายการนี้">🧾 ใบพาเลต</button>`}
+                    title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} ใบพาเลต</button>`}
                   ${labelUsagePickerActive && !isReadOnlyView ? `<button type="button" class="daily-label-pick-btn"
                     onclick="A.labelUsagePickRow('${escJs(row.id)}')"
                     aria-label="เลือก ${esc(row.code)} ลงใบบันทึกการใช้ฉลาก"
@@ -2659,10 +2705,10 @@ VIEWS.txn = function () {
                   <button type="button" class="daily-split-btn"
                     onclick="A.dailyOpenSplitLot('${escJs(row.id)}')"
                     aria-label="แยก Lot ของ ${esc(row.code)}"
-                    title="แยกจำนวนบางส่วนออกเป็นอีกบรรทัดพร้อมระบุ Lot">⑂ แยก LOT</button>
+                    title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} แยก LOT</button>
                   <button type="button" class="daily-delete-btn"
                     onclick="A.dailyDeleteRow('${escJs(row.id)}')"
-                    aria-label="ลบรายการ ${esc(row.code)}" title="ลบรายการนี้ออกจากตารางวันที่ ${esc(txnDate)}">🗑 ลบ</button>
+                    aria-label="ลบรายการ ${esc(row.code)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} ลบ</button>
                   `}
                 </td>
               </tr>`;
@@ -2810,7 +2856,7 @@ VIEWS.history = function () {
 
   $('#view-history').innerHTML = `
     <div class="page-head"><div><h1>ประวัติรายการ</h1><p>สร้างจากค่ารับเข้า รับคืน และเบิกจ่ายที่บันทึกในตารางรายวัน</p></div>
-      <button class="btn btn-ghost" onclick="A.exportCSV()">⬇️ Export CSV</button></div>
+      <button class="btn btn-ghost demo-locked" onclick="A.exportCSV()" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} Export CSV</button></div>
     <div class="card">
       <div class="toolbar">
         <div><label class="fl">จากวันที่</label>${dateInputHtml('h-from', f.from, 'history-date-input')}</div>
@@ -2844,7 +2890,7 @@ VIEWS.history = function () {
             <td class="small mut">${esc(t.ref || '-')}</td><td class="small mut">${esc(t.note || '-')}</td>
             <td>${t.source === 'daily-ledger'
               ? `<button class="btn btn-ghost btn-sm" onclick="A.historyOpen('${t.date}','${escJs(t.code)}')">ดูตาราง</button>`
-              : `<button class="btn-danger-ghost" onclick="A.txnDelete('${escJs(t.id)}')">ลบ</button>`}</td></tr>`;
+              : `<button class="btn-danger-ghost demo-locked" onclick="A.txnDelete('${escJs(t.id)}')" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK} ลบ</button>`}</td></tr>`;
         }).join('') || '<tr><td colspan="10" class="empty"><span class="e-ic">📭</span>ไม่พบรายการตามเงื่อนไข</td></tr>'}</tbody>
       </table></div>
       ${list.length > shown.length ? `<p class="mut small mt10"><button class="btn btn-ghost btn-sm" onclick="A.histMore()">แสดงเพิ่มอีก ${fmt(Math.min(HIST_PAGE, list.length - shown.length))} รายการ</button></p>` : ''}
@@ -3373,30 +3419,31 @@ VIEWS.settings = function () {
   const units = masterList('units');
 
   $('#view-settings').innerHTML = `
-    <div class="page-head"><div><h1>สินค้า &amp; ตั้งค่า</h1><p>ข้อมูลสินค้าเดียวกับตารางรายวันล่าสุด วันที่ ${thDate(dataDate, true)} · ตั้งค่า <b>หน่วย</b> และ <b>ชื่อบริษัทผู้ส่ง</b> เพื่อใช้เป็นค่าเริ่มต้นในใบพาเลท</p></div></div>
+    <div class="page-head"><div><h1>สินค้า &amp; ตั้งค่า</h1><p>ข้อมูลสินค้าเดียวกับตารางรายวันล่าสุด วันที่ ${thDate(dataDate, true)} · ตั้งค่า <b>หน่วย</b> และ <b>ชื่อบริษัทผู้ส่ง</b> เพื่อใช้เป็นค่าเริ่มต้นในใบพาเลท</p>
+      <p class="demo-locked-note">${DEMO_LOCK} เวอร์ชันทดลอง: หน้านี้ดูได้อย่างเดียว — การแก้ไขสินค้า, Min / Max, ผู้ส่ง, หน่วย และพื้นที่จัดเก็บ มีในเวอร์ชันเต็ม</p></div></div>
 
     <div class="grid-2">
       <div class="card grid-2-full">
         <div class="master-settings-grid master-settings-main-grid">
           <div class="master-settings-box">
             <h2>🏷️ ชื่อบริษัทผู้ส่ง และ Shelf Life</h2>
-            <div class="master-add-row master-supplier-add-row"><input id="master-supplier-name" maxlength="150" placeholder="ชื่อบริษัทผู้ส่ง" autocomplete="off">
-              <input id="master-supplier-shelf-life" maxlength="150" placeholder="เช่น 12 เดือน" autocomplete="off">
-              <button class="btn btn-green" type="button" onclick="A.addMaster('supplier')">＋ เพิ่ม</button></div>
+            <div class="master-add-row master-supplier-add-row"><input id="master-supplier-name" readonly maxlength="150" placeholder="ชื่อบริษัทผู้ส่ง" autocomplete="off">
+              <input id="master-supplier-shelf-life" readonly maxlength="150" placeholder="เช่น 12 เดือน" autocomplete="off">
+              <button class="btn btn-green" type="button" onclick="A.addMaster('supplier')">${DEMO_LOCK} เพิ่ม</button></div>
             ${supplierShelfLives.length ? `<div class="tbl-wrap master-supplier-table-wrap"><table class="master-supplier-table">
               <thead><tr><th>ชื่อบริษัทผู้ส่ง (SUP)</th><th>Shelf Life / อายุสินค้า</th><th>จัดการ</th></tr></thead>
               <tbody>${supplierShelfLives.map(row => `<tr><td>${esc(row.supplier)}</td><td>${esc(row.shelfLife || '-')}</td><td class="master-table-actions">
-                <button type="button" class="master-chip-edit" onclick="A.renameMaster('supplier','${escJs(row.supplier)}')" aria-label="แก้ไข ${esc(row.supplier)}" title="แก้ไขชื่อและ Shelf Life">✎</button>
-                <button type="button" class="master-chip-del" onclick="A.deleteMaster('supplier','${escJs(row.supplier)}')" aria-label="ลบ ${esc(row.supplier)}" title="ลบรายการนี้">✕</button>
+                <button type="button" class="master-chip-edit" onclick="A.renameMaster('supplier','${escJs(row.supplier)}')" aria-label="แก้ไข ${esc(row.supplier)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✎</button>
+                <button type="button" class="master-chip-del" onclick="A.deleteMaster('supplier','${escJs(row.supplier)}')" aria-label="ลบ ${esc(row.supplier)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✕</button>
               </td></tr>`).join('')}</tbody>
             </table></div>` : '<p class="mut small mt10">ยังไม่มีชื่อบริษัทผู้ส่ง — เพิ่มรายการไว้ก่อนได้เลย</p>'}
           </div>
           <div class="master-settings-box"><h3>📏 หน่วย</h3>
-            <div class="master-add-row"><input id="master-unit-name" maxlength="150" placeholder="เช่น PCS, ใบ, กล่อง" autocomplete="off">
-              <button class="btn btn-green" type="button" onclick="A.addMaster('unit')">＋ เพิ่ม</button></div>
+            <div class="master-add-row"><input id="master-unit-name" readonly maxlength="150" placeholder="เช่น PCS, ใบ, กล่อง" autocomplete="off">
+              <button class="btn btn-green" type="button" onclick="A.addMaster('unit')">${DEMO_LOCK} เพิ่ม</button></div>
             ${units.length ? `<div class="master-chip-list master-unit-list">${units.map(name => `<span class="master-chip">${esc(name)}
-              <button type="button" class="master-chip-edit" onclick="A.renameMaster('unit','${escJs(name)}')" aria-label="เปลี่ยนชื่อ ${esc(name)}" title="เปลี่ยนชื่อ">✎</button>
-              <button type="button" class="master-chip-del" onclick="A.deleteMaster('unit','${escJs(name)}')" aria-label="ลบ ${esc(name)}" title="ลบรายการนี้">✕</button>
+              <button type="button" class="master-chip-edit" onclick="A.renameMaster('unit','${escJs(name)}')" aria-label="เปลี่ยนชื่อ ${esc(name)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✎</button>
+              <button type="button" class="master-chip-del" onclick="A.deleteMaster('unit','${escJs(name)}')" aria-label="ลบ ${esc(name)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✕</button>
             </span>`).join('')}</div>` : '<p class="mut small mt10">ยังไม่มีหน่วย — เพิ่มรายการไว้ก่อนได้เลย</p>'}
           </div>
           <div class="master-settings-box">
@@ -3404,9 +3451,9 @@ VIEWS.settings = function () {
             <div class="frm-grid">
               <div class="full"><label class="fl">ชื่อพื้นที่ใหม่</label>
                 <div style="display:flex;gap:8px">
-                  <input id="na-name" placeholder="เช่น 1700-คลังสำรอง, คลัง HOLD" style="flex:1" autocomplete="off"
+                  <input id="na-name" readonly placeholder="เช่น 1700-คลังสำรอง, คลัง HOLD" style="flex:1" autocomplete="off"
                     onkeydown="if(event.key==='Enter'){event.preventDefault();A.addArea();}">
-                  <button class="btn btn-green" type="button" onclick="A.addArea()">＋ เพิ่มพื้นที่</button>
+                  <button class="btn btn-green" type="button" onclick="A.addArea()">${DEMO_LOCK} เพิ่มพื้นที่</button>
                 </div>
               </div>
             </div>
@@ -3414,9 +3461,9 @@ VIEWS.settings = function () {
             <div class="area-chip-list area-settings-list mt10">
               ${S.areas.map(a => `<span class="area-chip">${esc(a)}
                 <button type="button" class="area-chip-edit" onclick="A.renameArea('${escJs(a)}')"
-                  aria-label="เปลี่ยนชื่อพื้นที่ ${esc(a)}" title="เปลี่ยนชื่อพื้นที่นี้">✎</button>
+                  aria-label="เปลี่ยนชื่อพื้นที่ ${esc(a)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✎</button>
                 <button type="button" class="area-chip-del" onclick="A.deleteArea('${escJs(a)}')"
-                  aria-label="ลบพื้นที่ ${esc(a)}" title="ลบออกจากรายการพื้นที่ (ไม่กระทบข้อมูลที่มีอยู่แล้ว)">✕</button>
+                  aria-label="ลบพื้นที่ ${esc(a)}" title="${DEMO_PREMIUM_MESSAGE}">${DEMO_LOCK}✕</button>
               </span>`).join('')}
             </div>` : '<p class="mut small mt10">ยังไม่มีพื้นที่ในรายการ — เพิ่มไว้ก่อนได้เลย</p>'}
           </div>
@@ -3436,17 +3483,22 @@ VIEWS.settings = function () {
         <thead><tr><th>สินค้า</th><th>ITEM</th><th style="width:105px">Min</th><th style="width:105px">Max</th><th style="width:105px">Safety</th><th style="width:110px">หน่วย</th><th style="width:220px">ชื่อบริษัทผู้ส่ง</th><th></th></tr></thead>
         <tbody>${list.map(i => `
           <tr><td><div class="item-name">${esc(i.name)}${i.identities.length > 1 ? ` <span class="sub">(รวม ${fmt(i.identities.length)} รายการ)</span>` : ''}</div></td><td class="item-code">${esc(i.code)}</td>
-            <td><input class="settings-item-input" type="number" min="0" value="${i.min}" data-code="${esc(i.code)}" data-field="min"></td>
-            <td><input class="settings-item-input" type="number" min="0" value="${i.max}" data-code="${esc(i.code)}" data-field="max"></td>
-            <td><input class="settings-item-input" type="number" min="0" value="${i.safety}" data-code="${esc(i.code)}" data-field="safety"></td>
-            <td><input class="settings-item-input" value="${esc(i.unit || '')}" placeholder="หน่วย" data-code="${esc(i.code)}" data-field="unit"></td>
-            <td><input class="settings-item-input" value="${esc(i.supplier || '')}" placeholder="บริษัทผู้ส่ง" data-code="${esc(i.code)}" data-field="supplier"></td>
+            <td><input class="settings-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${i.min}" data-code="${esc(i.code)}" data-field="min"></td>
+            <td><input class="settings-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${i.max}" data-code="${esc(i.code)}" data-field="max"></td>
+            <td><input class="settings-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${i.safety}" data-code="${esc(i.code)}" data-field="safety"></td>
+            <td><input class="settings-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" value="${esc(i.unit || '')}" placeholder="หน่วย" data-code="${esc(i.code)}" data-field="unit"></td>
+            <td><input class="settings-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" value="${esc(i.supplier || '')}" placeholder="บริษัทผู้ส่ง" data-code="${esc(i.code)}" data-field="supplier"></td>
             <td><button class="btn btn-ghost btn-sm" onclick="A.editDailyItem('${escJs(i.identities?.[0] || i.code)}')">แก้ในตาราง</button></td></tr>`).join('')}</tbody>
       </table></div>
     </div>`;
 
   $('#set-q').oninput = e => { setQ = e.target.value; VIEWS.settings(); const el = $('#set-q'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); };
   $('#set-filter').onchange = e => { setFilter = e.target.value; VIEWS.settings(); };
+  $('#view-settings').onclick = e => {
+    if (e.target.closest?.('.settings-item-input, #master-supplier-name, #master-supplier-shelf-life, #master-unit-name, #na-name')) {
+      A.premium('แก้ไขข้อมูลสินค้า / ตั้งค่า');
+    }
+  };
   $('#view-settings').oninput = e => {
     const input = e.target.closest('.settings-item-input');
     if (!input) return;
@@ -3502,11 +3554,11 @@ function openItem(identity) {
 
     <div class="card">${lvlBarHTML(it)}
       <div class="frm-grid mt16" style="grid-template-columns:1fr 1fr">
-        <div><label class="fl">Min</label><input class="drawer-item-input" type="number" min="0" value="${it.min}" data-item="${esc(key)}" data-field="min"></div>
-        <div><label class="fl">Max (ความจุจัดเก็บ)</label><input class="drawer-item-input" type="number" min="0" value="${it.max}" data-item="${esc(key)}" data-field="max"></div>
-        <div><label class="fl">Safety</label><input class="drawer-item-input" type="number" min="0" value="${it.safety}" data-item="${esc(key)}" data-field="safety"></div>
-        <div><label class="fl">หน่วยนับ</label><input class="drawer-item-input" value="${esc(it.unit)}" data-item="${esc(key)}" data-field="unit"></div>
-        <div class="full"><label class="fl">ชื่อบริษัทผู้ส่ง</label><input class="drawer-item-input" value="${esc(it.supplier || '')}" data-item="${esc(key)}" data-field="supplier" placeholder="เช่น บจก. กล่องไทย ตัวอย่าง"></div>
+        <div><label class="fl">Min</label><input class="drawer-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${it.min}" data-item="${esc(key)}" data-field="min"></div>
+        <div><label class="fl">Max (ความจุจัดเก็บ)</label><input class="drawer-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${it.max}" data-item="${esc(key)}" data-field="max"></div>
+        <div><label class="fl">Safety</label><input class="drawer-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" type="number" min="0" value="${it.safety}" data-item="${esc(key)}" data-field="safety"></div>
+        <div><label class="fl">หน่วยนับ</label><input class="drawer-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" value="${esc(it.unit)}" data-item="${esc(key)}" data-field="unit"></div>
+        <div class="full"><label class="fl">ชื่อบริษัทผู้ส่ง</label><input class="drawer-item-input" readonly title="${DEMO_LOCK} ${DEMO_PREMIUM_MESSAGE}" value="${esc(it.supplier || '')}" data-item="${esc(key)}" data-field="supplier" placeholder="เช่น บจก. กล่องไทย ตัวอย่าง"></div>
       </div>
       ${orderAdvice}
     </div>
@@ -3531,6 +3583,9 @@ function openItem(identity) {
     </div>`;
   $('#overlay').classList.add('open');
   $('#drawer').classList.add('open');
+  $('#drawer').onclick = e => {
+    if (e.target.closest?.('.drawer-item-input')) A.premium('แก้ไข Min / Max / Safety / หน่วย / ผู้ส่ง');
+  };
   $('#drawer').oninput = e => {
     const input = e.target.closest('.drawer-item-input');
     if (!input) return;
@@ -3574,7 +3629,13 @@ window.A = {
     $('#modal').innerHTML = '';
     if (!$('#drawer').classList.contains('open')) $('#overlay').classList.remove('open');
   },
+  premium(feature = '') { return demoPremium(feature); },
+  closePremium() {
+    const box = document.getElementById('demo-premium');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+  },
   closeOverlays() {
+    this.closePremium();
     if (dailyReadyReminderOpen) return;
     this.closeDrawer();
     this.closeModal();
@@ -4649,6 +4710,21 @@ function bootMessage(icon, title, detail, retry = false) {
     <div class="boot-ic">${icon}</div><h2>${esc(title)}</h2><p class="mut">${detail}</p>
     ${retry ? '<button class="btn btn-primary mt16" type="button" onclick="boot()">↻ ลองใหม่</button>' : ''}
   </div>`;
+}
+
+// Full-version features: same buttons, one shared 🔒 box (see demoPremium).
+const DEMO_PREMIUM_FEATURES = {
+  exportDailyExcel: 'Export Excel', exportDailyCsv: 'Export CSV', exportCSV: 'Export CSV',
+  dailyPrint: 'พิมพ์เอกสาร', dailyOpenPallet: 'พิมพ์ใบกำกับพาเลต / ใบบันทึกการใช้ฉลาก',
+  dailyPrintPallet: 'พิมพ์ใบกำกับพาเลต', labelUsagePrint: 'พิมพ์ใบบันทึกการใช้ฉลาก',
+  labelUsagePickRow: 'ใบบันทึกการใช้ฉลาก',
+  dailyOpenSplitLot: 'แยก Lot', dailySplitLot: 'แยก Lot', dailyDeleteRow: 'ลบรายการ', txnDelete: 'ลบรายการ',
+  updItem: 'แก้ไข Min / Max / Safety / หน่วย / ผู้ส่ง', updSettingsGroup: 'แก้ไข Min / Max / Safety / หน่วย / ผู้ส่ง',
+  addItem: 'เพิ่มสินค้าใหม่', addArea: 'ตั้งค่าพื้นที่จัดเก็บ', renameArea: 'ตั้งค่าพื้นที่จัดเก็บ', deleteArea: 'ตั้งค่าพื้นที่จัดเก็บ',
+  addMaster: 'ข้อมูลหลัก (ผู้ส่ง / หน่วย)', renameMaster: 'ข้อมูลหลัก (ผู้ส่ง / หน่วย)', deleteMaster: 'ข้อมูลหลัก (ผู้ส่ง / หน่วย)',
+};
+for (const [name, feature] of Object.entries(DEMO_PREMIUM_FEATURES)) {
+  if (typeof A[name] === 'function') A[name] = () => demoPremium(feature);
 }
 
 async function boot() {

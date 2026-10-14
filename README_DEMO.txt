@@ -26,8 +26,43 @@ Programming by Duongruthai_Milk
 ประวัติเก่าอีก 3 สัปดาห์, มีรายการต่ำกว่า Min 5 รายการ, เกิน Max 4 รายการ,
 หมดสต๊อก 1 รายการ และ Lot ที่หมดอายุ/ใกล้หมดอายุ — ทั้งหมดเป็นข้อมูลสมมติ
 
-ข้อมูลทั้งหมดจะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 3 วันโดยอัตโนมัติ
+ข้อมูลกลาง (ที่ทุกคนเห็นร่วมกัน) จะถูกรีเซ็ตกลับเป็นค่าเริ่มต้นทุก 5 ชั่วโมงโดยอัตโนมัติ
+และผู้ทดลองแต่ละคนใช้งานได้ 5 ชั่วโมง (นับตาม IP + อุปกรณ์ — ดูหัวข้อ 2b)
 (แถบ "🧪 ระบบทดลองใช้ (Demo)" ด้านบนทุกหน้าจะแสดงเวลารีเซ็ตครั้งถัดไป)
+
+1b) เวอร์ชันทดลองเปิดให้ลองอะไรได้บ้าง
+--------------------------------------
+เดโมนี้ให้ "ลองใช้และเห็นภาพ" ไม่ใช่ทั้งระบบ — ฟีเจอร์ของเวอร์ชันเต็มยังแสดงปุ่มไว้พร้อม 🔒
+กดแล้วจะขึ้นกล่อง "🔒 ฟีเจอร์นี้มีในเวอร์ชันเต็ม — <ข้อความติดต่อ DEMO_CONTACT>"
+และฝั่ง API (Apps Script) ก็ปฏิเสธคำสั่งเหล่านี้ด้วย {ok:false, error:'ฟีเจอร์นี้มีในเวอร์ชันเต็ม'}
+
+ใช้งานได้
+  • แดชบอร์ด (KPI, โดนัท, กราฟ 7 วัน, Top 3, ตารางสต๊อก, ค้นหา/กรองสถานะ, หมายเหตุสต๊อก)
+  • แจ้งเตือน & Lot (ดู + กรองวันหมดอายุ), รายละเอียดสินค้า (drawer, ดูอย่างเดียว)
+  • ตารางรับเข้า / เบิกจ่ายรายวัน: ดูทุกวัน ทุกพื้นที่ ข้อมูลแยก Lot / ข้อมูลรวม, ค้นหา
+    โหมดแก้ไข (รหัส demo1234) เฉพาะ "ตารางของวันนี้":
+      - กรอกรับเข้า / รับคืน / จ่าย QA / ส่งคืน Supplier / จ่ายบรรจุ, Lot, วันที่ผลิต/หมดอายุ, หมายเหตุ
+      - ＋ เพิ่มรายการ (รับเข้าสินค้าใหม่) ในตารางวันนี้
+      - ปุ่ม "พร้อมใช้งาน" ของวันนี้
+  • ประวัติรายการ (ดู, กรองวันที่/ประเภท, ค้นหา)
+  • อัตราการใช้งาน (ดูอย่างเดียว) และหน้า สินค้า & ตั้งค่า (ดูอย่างเดียว)
+
+ล็อกไว้ (🔒 มีในเวอร์ชันเต็ม)                          คำสั่ง API ที่ถูกปฏิเสธ
+  • Export Excel / Export CSV (ตารางรายวัน, ประวัติ)     — (ทำงานฝั่งหน้าเว็บ ล็อกที่ปุ่ม)
+  • พิมพ์เอกสาร, ใบกำกับพาเลต, ใบบันทึกการใช้ฉลาก       — (ทำงานฝั่งหน้าเว็บ ล็อกที่ปุ่ม)
+  • แยก Lot                                              daily_ledger_split_lot
+  • ลบรายการ (ตารางรายวัน / ประวัติ)                     daily_ledger_delete_row, txn_delete
+  • แก้ Min / Max / Safety / หน่วย / ผู้ส่ง               item_update และ daily_ledger_save ที่เปลี่ยนค่าเหล่านี้
+  • เพิ่มสินค้าใหม่ (ข้อมูลหลัก), ปรับยอด/บันทึกแบบเก่า     item_add, txn_add
+  • ตั้งค่าระบบ                                          config_save
+  • พื้นที่จัดเก็บ (เพิ่ม/เปลี่ยนชื่อ/ลบ)                    area_add, area_rename, area_delete
+  • ข้อมูลหลัก ผู้ส่ง + Shelf Life / หน่วย                 master_add, master_rename, master_delete
+  • แก้ไขตารางย้อนหลัง/ล่วงหน้า (ไม่ใช่วันนี้)               daily_ledger_save / add_row / create / daily_ready_mark
+                                                         ที่ date ≠ วันนี้
+  (ปิดตั้งแต่เดิม: เชื่อมต่อ/Sync ERP และนำเข้าตารางกำหนดรับจาก Excel)
+  ปรับรายการล็อกได้ที่ apps-script/Code.gs → DEMO_PREMIUM_ACTIONS / DEMO_TODAY_ONLY_ACTIONS /
+  DEMO_LOCKED_LEDGER_FIELDS (DEMO_LOCK_PREMIUM = false ปิดการล็อกทั้งหมด) และหน้าเว็บที่
+  docs/assets/app.js → DEMO_PREMIUM_FEATURES
 
 2) บัญชีทดลอง
 --------------
@@ -37,18 +72,35 @@ Programming by Duongruthai_Milk
      ถ้าเปลี่ยนรหัส ให้แก้ทั้ง 2 ที่ แล้วรัน setupDemo อีกครั้ง)
 
 ฟังก์ชันที่ปิดไว้ในเดโม: การเชื่อมต่อ/Sync ข้อมูลจากระบบ ERP และการนำเข้าตารางกำหนดรับจาก Excel
+และฟีเจอร์ 🔒 ตามหัวข้อ 1b
+
+2b) สิทธิ์ทดลองใช้ 5 ชั่วโมงต่อคน (Trial Gate)
+---------------------------------------------
+  • ไฟล์ docs/assets/trial-gate.js (คัดลอกจากโปรเจกต์กลาง TrialGate — ห้ามแก้ไฟล์นี้)
+    โหลดทุกหน้าต่อจาก config.js — แสดงป้ายนับเวลาถอยหลังมุมล่างซ้าย (ขยับให้พ้นแถบเมนู
+    ด้วย CSS ใน style.css) และเมื่อครบ 5 ชั่วโมงจะขึ้นหน้าจอ "หมดเวลาทดลอง" เต็มจอ
+  • ตั้งค่าใน docs/config.js → window.DEMO_TRIAL
+      gateUrl:   URL /exec ของ Apps Script "Trial Gate" (โปรเจกต์แยก ใช้ร่วมกันทุกเดโม)
+                 ใส่แทน PASTE_TRIAL_GATE_URL_HERE
+      app:       'packaging'
+      hours:     5
+      contact:   ใช้ข้อความเดียวกับ DEMO_CONTACT
+      priceHtml: เช่ารายปีเริ่ม 19,900 บาท/ปี · ขายขาดเริ่ม 39,900 บาท
+  • ถ้ายังไม่ใส่ gateUrl หรือเชื่อมต่อ Trial Gate ไม่ได้ เดโมยังใช้ได้ตามปกติ (fail-open)
 
 3) ขั้นตอนติดตั้ง (Deploy)
 ---------------------------
  1. เปิด https://script.google.com → New project (โปรเจกต์แบบ standalone)
  2. สร้างไฟล์สคริปต์ 5 ไฟล์ แล้ววางโค้ดจากโฟลเดอร์ apps-script/ ให้ชื่อตรงกัน:
-      Code.gs, Store.gs, Ledger.gs, Seed.gs, Demo.gs
+      Ledger.gs, Store.gs, Seed.gs, Demo.gs, Code.gs   (ลำดับที่แนะนำในการวาง)
     (ลบโค้ดเดิมใน Code.gs ทิ้งก่อน)
+    ถ้าอัปเดตจากเวอร์ชันเดิม: วาง Demo.gs และ Code.gs ใหม่ แล้วรัน setupDemo อีกครั้ง
+    เพื่อเปลี่ยน Trigger รายวันเดิมเป็น Trigger รายชั่วโมง (ตัวเดิมถูกลบให้อัตโนมัติ)
  3. Project Settings → ติ๊ก "Show appsscript.json manifest file in editor"
     แล้ววางเนื้อหาจาก apps-script/appsscript.json (Time zone = Asia/Bangkok)
  4. เลือกฟังก์ชัน setupDemo แล้วกด Run ครั้งเดียว → กดอนุญาตสิทธิ์ (Authorize)
     สคริปต์จะ: สร้าง Google Sheet ใหม่, ใส่ข้อมูลตัวอย่าง, บันทึก DEMO_LAST_RESET,
-    ตั้งรหัสผ่านทดลอง และติดตั้ง Trigger รายวัน demoAutoReset (มีเพียง 1 ตัว)
+    ตั้งรหัสผ่านทดลอง และติดตั้ง Trigger รายชั่วโมง demoAutoReset (มีเพียง 1 ตัว)
     ดูผลได้ที่ Execution log
  5. Deploy → New deployment → เลือกประเภท Web app
       Execute as:      Me
@@ -62,7 +114,8 @@ Programming by Duongruthai_Milk
 ฟังก์ชันที่รันเองได้ใน Apps Script
   • setupDemo()      ติดตั้งครั้งแรก (รันซ้ำได้ — ใช้ Sheet เดิม, Trigger ยังมีแค่ 1 ตัว และรีเซ็ตข้อมูล)
   • resetDemoNow()   รีเซ็ตข้อมูลกลับเป็นค่าเริ่มต้นทันที
-  • demoAutoReset()  ตัวที่ Trigger เรียกทุกวันช่วง 01:00–02:00 น. — รีเซ็ตเมื่อครบ 3 วัน
+  • demoAutoReset()  ตัวที่ Trigger เรียกทุก 1 ชั่วโมง — รีเซ็ตเมื่อครบ 5 ชั่วโมงนับจากรีเซ็ตครั้งก่อน
+                     (DEMO_RESET_HOURS ใน Demo.gs; จึงรีเซ็ตจริงภายใน 5–6 ชั่วโมง)
 
 หมายเหตุ
   • ถ้าแก้โค้ด .gs ภายหลัง ต้อง Deploy → Manage deployments → Edit → Version: New version
@@ -75,6 +128,8 @@ Programming by Duongruthai_Milk
 ---------------------------
   node test/run-tests.js
   (จำลอง SpreadsheetApp / PropertiesService / ScriptApp / ContentService / Utilities / LockService
-   ทดสอบ setupDemo, การรีเซ็ต 3 วัน, ทุก API action และหน้าเว็บ docs/ กับ API จำลอง)
+   ทดสอบ setupDemo, Trigger รายชั่วโมง 1 ตัว, การรีเซ็ตทุก 5 ชั่วโมงด้วยนาฬิกาจำลอง,
+   ทุก API action (ปิดล็อกชั่วคราว), การล็อกฟีเจอร์เวอร์ชันเต็มฝั่ง API และหน้าเว็บ,
+   trial-gate.js + DEMO_TRIAL และหน้าเว็บ docs/ กับ API จำลอง)
   ข้อมูลตัวอย่างแบบ plain data สำหรับตรวจสอบ: test/seed-snapshot.json (สร้างที่วันที่ 2026-01-15)
   สร้างใหม่ได้ด้วย  node test/run-tests.js --update-snapshot

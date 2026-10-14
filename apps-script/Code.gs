@@ -25,6 +25,26 @@ var DEMO_DISABLED_ACTIONS = {
   reimport_deliveries: 'การนำเข้าตารางกำหนดรับจาก Excel',
 };
 
+// Full-version ("premium") features: still shown in the demo UI with a 🔒, but
+// the API refuses them so they cannot be called directly either.
+// The demo keeps: viewing everything, entering today's movements in the daily
+// table (receive / return / issue / Lot / dates / notes), adding a row to
+// today's table and setting today to "พร้อมใช้งาน".
+var DEMO_LOCK_PREMIUM = true;
+var DEMO_PREMIUM_MESSAGE = 'ฟีเจอร์นี้มีในเวอร์ชันเต็ม';
+var DEMO_PREMIUM_ACTIONS = {
+  daily_ledger_split_lot: 1, daily_ledger_delete_row: 1,
+  txn_add: 1, txn_delete: 1, item_update: 1, item_add: 1, config_save: 1,
+  area_add: 1, area_rename: 1, area_delete: 1,
+  master_add: 1, master_rename: 1, master_delete: 1,
+};
+// Actions that stay usable, but only on today's table.
+var DEMO_TODAY_ONLY_ACTIONS = {
+  daily_ledger_create: 1, daily_ledger_save: 1, daily_ledger_add_row: 1, daily_ready_mark: 1,
+};
+// Master data columns of the daily table (Min / Max / Safety / unit / supplier).
+var DEMO_LOCKED_LEDGER_FIELDS = ['min', 'max', 'safety', 'unit', 'supplier'];
+
 // Demo safety limits (keeps the public sheet small)
 var DEMO_MAX_ROWS_PER_DAY = 400;
 var DEMO_MAX_TRANSACTIONS = 3000;
@@ -129,8 +149,29 @@ function parseRows_(raw) {
   }
 }
 
+function premiumGuard_(action, p) {
+  if (!DEMO_LOCK_PREMIUM) return;
+  if (DEMO_PREMIUM_ACTIONS[action]) fail_(DEMO_PREMIUM_MESSAGE);
+  if (DEMO_TODAY_ONLY_ACTIONS[action] && str_(p.date) !== todayIso_()) {
+    fail_(DEMO_PREMIUM_MESSAGE + ' — เวอร์ชันทดลองทำรายการได้เฉพาะตารางของวันนี้');
+  }
+}
+
+// daily_ledger_save in the demo: Min / Max / Safety / unit / supplier stay as they are.
+function premiumLedgerFieldsGuard_(row, change) {
+  if (!DEMO_LOCK_PREMIUM) return;
+  DEMO_LOCKED_LEDGER_FIELDS.forEach(function (f) {
+    if (!has_(change, f)) return;
+    var same = (f === 'unit' || f === 'supplier')
+      ? trim_(change[f]) === trim_(row[f])
+      : Number(change[f] || 0) === Number(row[f] || 0);
+    if (!same) fail_(DEMO_PREMIUM_MESSAGE + ' — การแก้ไข Min / Max / Safety / หน่วย / ผู้ส่ง');
+  });
+}
+
 function route_(action, p) {
   if (DEMO_DISABLED_ACTIONS[action]) fail_(DEMO_DISABLED_ACTIONS[action] + ' ปิดไว้ในเวอร์ชันเดโม');
+  premiumGuard_(action, p);
   switch (action) {
     case 'payload': return respond_({});
     case 'demo_info': return {ok: true, demo: demoInfo_(), today: todayIso_()};
@@ -241,6 +282,7 @@ function actionDailyLedgerSave_(p) {
     if (id === '' || !has_(rowIndex, id)) return;
     var row = ledger.rows[rowIndex[id]];
     if (row.kind !== 'item') return;
+    premiumLedgerFieldsGuard_(row, change);
 
     LEDGER_NUMBER_FIELDS.forEach(function (f) { if (has_(change, f)) row[f] = cleanLedgerNumber_(change[f]); });
     if (has_(change, 'unit')) row.unit = cleanLedgerUnit_(change.unit);
