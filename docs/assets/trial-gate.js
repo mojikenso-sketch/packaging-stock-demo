@@ -24,7 +24,7 @@
   var CACHE_KEY = 'demo_trial_state_' + app;
   var DEVICE_KEY = 'demo_trial_device';
   var listeners = [];
-  var state = { expiresAt: 0, expired: false, checked: false };
+  var state = { expiresAt: 0, expired: false, checked: false, unlimited: false };
 
   function store(op, key, value) {
     try {
@@ -84,6 +84,13 @@
       'padding:24px;text-align:center;font:400 15px/1.6 Sarabun,"Segoe UI",Tahoma,sans-serif;box-shadow:0 20px 50px rgba(0,0,0,.35)}' +
       '#demo-trial-block h2{margin:0 0 8px;font-size:20px}' +
       '#demo-trial-block .contact{margin-top:12px;font-weight:600;color:#1d4ed8}' +
+      '#demo-trial-block .owner-link{display:inline-block;margin-top:18px;font-size:11px;color:#9ca3af;' +
+      'background:none;border:0;cursor:pointer;padding:2px 4px}' +
+      '#demo-trial-block .owner-form{display:none;margin-top:10px;gap:6px;justify-content:center}' +
+      '#demo-trial-block .owner-form.show{display:flex}' +
+      '#demo-trial-block .owner-form input{width:140px;padding:6px 8px;border:1px solid #d1d5db;border-radius:8px;font:inherit}' +
+      '#demo-trial-block .owner-form button{padding:6px 12px;border:0;border-radius:8px;background:#1d4ed8;color:#fff;font:inherit;cursor:pointer}' +
+      '#demo-trial-block .owner-msg{min-height:18px;margin-top:6px;font-size:12px;color:#b91c1c}' +
       '@media print{#demo-trial-badge,#demo-trial-block{display:none!important}}';
     document.head.appendChild(s);
   }
@@ -121,14 +128,72 @@
     c.className = 'contact';
     c.textContent = cfg.contact || 'สนใจใช้งานจริง กรุณาติดต่อผู้ขาย';
     box.appendChild(c);
+    ownerUnlock(box);
     wrap.appendChild(box);
     document.body.appendChild(wrap);
+  }
+
+  /** Discreet owner unlock: the code is checked only by the gate server. */
+  function ownerUnlock(box) {
+    var link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'owner-link';
+    link.textContent = 'ผู้ดูแล';
+    var form = document.createElement('form');
+    form.className = 'owner-form';
+    var input = document.createElement('input');
+    input.type = 'password';
+    input.autocomplete = 'off';
+    input.placeholder = 'รหัส';
+    input.setAttribute('aria-label', 'รหัสผู้ดูแล');
+    var go = document.createElement('button');
+    go.type = 'submit';
+    go.textContent = 'ปลดล็อก';
+    var msg = document.createElement('div');
+    msg.className = 'owner-msg';
+    form.appendChild(input);
+    form.appendChild(go);
+    link.addEventListener('click', function () { form.classList.add('show'); input.focus(); });
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (!input.value || !cfg.gateUrl || /PASTE_/.test(cfg.gateUrl)) return;
+      go.disabled = true;
+      msg.textContent = '';
+      publicIp().then(function (ip) {
+        return withTimeout(fetch(cfg.gateUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'unlock', app: app, ip: ip, device: deviceId(), code: input.value,
+            ua: navigator.userAgent.slice(0, 200) })
+        }), 15000);
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        input.value = '';
+        if (j && j.ok && j.unlimited) applyUnlimited();
+        else msg.textContent = (j && j.error) || 'ปลดล็อกไม่สำเร็จ';
+      }).catch(function () {
+        msg.textContent = 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง';
+      }).then(function () { go.disabled = false; });
+    });
+    box.appendChild(link);
+    box.appendChild(form);
+    box.appendChild(msg);
+  }
+
+  function applyUnlimited() {
+    state.unlimited = true;
+    state.expired = false;
+    store('set', CACHE_KEY, 'unlimited');
+    var b = document.getElementById('demo-trial-block');
+    if (b) b.remove();
+    var badgeEl = document.getElementById('demo-trial-badge');
+    if (badgeEl) badgeEl.remove();
+    listeners.forEach(function (fn) { try { fn(state); } catch (e) {} });
   }
 
   function render() {
     if (!document.body) return;
     css();
-    if (!state.expiresAt) return;
+    if (state.unlimited || !state.expiresAt) return;
     var left = state.expiresAt - Date.now();
     var wasExpired = state.expired;
     state.expired = left <= 0;
@@ -164,8 +229,11 @@
       return withTimeout(fetch(url, { cache: 'no-store' }), 15000)
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          if (j && j.ok) {
+          if (j && j.ok && j.unlimited) {
+            applyUnlimited();
+          } else if (j && j.ok) {
             // Use the server's remaining time against the local clock (clock skew safe).
+            state.unlimited = false;
             apply(Date.now() + Number(j.remainingMs || 0));
           }
         });
@@ -179,8 +247,10 @@
   };
 
   function start() {
-    var cached = Number(store('get', CACHE_KEY)) || 0;
-    if (cached) { state.expiresAt = cached; render(); }
+    var cachedRaw = store('get', CACHE_KEY);
+    var cached = Number(cachedRaw) || 0;
+    if (cachedRaw === 'unlimited') state.unlimited = true;
+    else if (cached) { state.expiresAt = cached; render(); }
     check();
     setInterval(render, 30000);
     setInterval(check, 5 * 60000);
