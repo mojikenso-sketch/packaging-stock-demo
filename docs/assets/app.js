@@ -1,5 +1,5 @@
 /* ═══ Packaging Stock Control — app.js (DEMO · GitHub Pages + Google Apps Script) ═══
- * บริษัท ตัวอย่าง อินดัสทรี จำกัด (Demo Co., Ltd.) · Programming by Duongruthai_Milk
+ * บริษัท ตัวอย่าง อินดัสทรี จำกัด (Demo Co., Ltd.)
  * Data comes from the Apps Script Web App set in docs/config.js. */
 'use strict';
 

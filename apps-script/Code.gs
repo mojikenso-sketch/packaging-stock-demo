@@ -6,7 +6,6 @@
  * setupDemo() (see Demo.gs). Reads: GET ?action=payload. Writes: POST with a
  * text/plain JSON body {action, ...params} (no CORS preflight).
  *
- * Programming by Duongruthai_Milk
  */
 
 var MUTATING_ACTIONS = {
